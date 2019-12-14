@@ -77,7 +77,15 @@ def initialize_model():
     model.add(Flatten())
 
     # create feed forward part of neural network
-    model.add(Dense(128, input_shape=(2, 1)))
+    model.add(Dense(128))
+    model.add(Dropout(0.5))
+    model.add(Activation('relu'))
+
+    model.add(Dense(256))
+    model.add(Dropout(0.5))
+    model.add(Activation('relu'))
+
+    model.add(Dense(512))
     model.add(Dropout(0.5))
     model.add(Activation('relu'))
 
@@ -99,21 +107,61 @@ def initialize_model():
 def train(train_data, model):
     x = []
     y = []
+
+    # extract labels and data from train_data
     for i in train_data:
         x.append(np.array([i[0]]).reshape(-1, len(train_data[0][0]), 1))
         y.append(np.array([i[1]]))
 
+    # convert lists to numpy arrays
     x = np.array(x)
     y = np.array(y)
 
     # train and save model
     model.fit(x, y, epochs=2)
 
-    model.save('CartPole-v0.model')
+    # save model
+    model.save('CartPole-v0.h5')
 
-data = initial_games()
-model = initialize_model()
-train(data, model)
+def test(model, games):
+    prev_observation = []
+    scores = []
+    score = 0 
+
+    # play for required amount of games
+    for _ in range(games):
+        env.reset()
+        while 1:
+            env.render()
+
+            # if list is empty there are no actions to predict so movement is random
+            if len(prev_observation) == 0:
+                action = random.randrange(0, 2)
+            else:
+                # predict next action based off previous observation
+                action = np.argmax(model.predict(prev_observation.reshape(-1, len(prev_observation), 1))[0])
+
+            # get timestep data based on action
+            obver, reward, done, info = env.step(action)
+            prev_observation = obver
+            score += 1
+
+            if done:
+                break
+
+        scores.append(score)
+
+    # print out the highest and average score for the games
+    print('Highest score: ', max(scores))
+    print('Average score: ', sum(scores)/len(scores))
+
+# data = initial_games()
+# model = initialize_model()
+# train(data, model)
+
+model = tf.keras.models.load_model('CartPole-v0.h5')
+game = 5
+test(model, game)
 
 
 
