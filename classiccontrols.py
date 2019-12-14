@@ -8,7 +8,7 @@ import argparse
 
 goal_score = 500
 req_score = -200
-games = 1000
+games = 10
 
 def initial_games(env):
     # intialize training data
@@ -39,10 +39,7 @@ def initial_games(env):
 
             # if the list is not empty append the previous observation with the action that caused it
             if len(prev_observation) > 0:
-                s = score + reward
-                if s > score:
-                    game_memory.append([prev_observation, action])
-
+                game_memory.append([prev_observation, action])
 
             prev_observation = observation
 
@@ -155,6 +152,53 @@ def test(model, games, env):
     print('Highest score: ', max(scores))
     print('Average score: ', sum(scores)/len(scores))
 
+def investigate_env(env):
+    actions = []
+    d = False
+    for _ in range(50):
+        score = 0 # score is 0 at beginning of each game
+        game_memory = []
+        prev_observation = []
+        
+        # reset the game before trying to get data from it
+        observation = env.reset()
+
+        # iterate as many times as it should ideally last
+        while 1:
+            # move in random direction
+            action = env.action_space.sample()
+
+            if action not in actions:
+                actions.append(action)
+
+            # sample data based on the action just taken
+            observation, reward, done, info = env.step(action)
+
+            if done:
+                break
+
+        # game is done
+        env.close()
+
+    print('Number of actions: ', len(actions))
+
+    for action in actions:
+        print('Movement for action ', action)
+        env.reset()
+        for _ in range(1000):
+            env.render()
+
+            if not d:
+                # sample data based on the action just taken
+                observation, reward, done, info = env.step(action)
+
+            if done:
+                d = True
+    env.close()
+
+
+
+
 def main():
     parser = argparse.ArgumentParser()
 
@@ -170,6 +214,10 @@ def main():
             action="store", dest="env",
             help="choose classic environment to use")
 
+    parser.add_argument('-i', '--investigate',
+            action="store_true", dest="inv",
+            help="Investigate how an environment works")
+
     args = parser.parse_args()
 
     env = gym.make(args.env)
@@ -183,6 +231,9 @@ def main():
         model = tf.keras.models.load_model(args.env + '.h5')
         game = int(args.test)
         test(model, game, env)
+
+    if args.inv:
+        investigate_env(env)
 
 
 if __name__ == '__main__':
