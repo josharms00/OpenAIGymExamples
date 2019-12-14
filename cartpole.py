@@ -4,6 +4,7 @@ from tensorflow.keras.layers import Dense, Dropout, Activation, Flatten
 import gym
 import random
 import numpy as np
+import argparse
 
 env = gym.make('CartPole-v0')
 
@@ -29,7 +30,7 @@ def initial_games():
         for _ in range(goal_score):
 
             # move in random direction, cartpole can only go two ways
-            action = random.randrange(0, 2)
+            action = env.action_space.sample()
 
             # sample data based on the action just taken
             observation, reward, done, info = env.step(action)
@@ -155,13 +156,34 @@ def test(model, games):
     print('Highest score: ', max(scores))
     print('Average score: ', sum(scores)/len(scores))
 
-# data = initial_games()
-# model = initialize_model()
-# train(data, model)
+def main():
+    parser = argparse.ArgumentParser()
 
-model = tf.keras.models.load_model('CartPole-v0.h5')
-game = 5
-test(model, game)
+    parser.add_argument('-t', '--train',
+            action="store_true", dest="train",
+            help="train model")
+
+    parser.add_argument('-p', '--test',
+            action="store", dest="test",
+            help="test model over amount of games")
+
+    args = parser.parse_args()
+
+    if args.train:
+        data = initial_games()
+        model = initialize_model()
+        train(data, model)
+
+    if args.test:
+        model = tf.keras.models.load_model('CartPole-v0.h5')
+        game = int(args.test)
+        test(model, game)
+
+
+if __name__ == '__main__':
+    main()
+
+
 
 
 
