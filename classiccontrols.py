@@ -7,14 +7,15 @@ import numpy as np
 import argparse
 
 goal_score = 500
-req_score = -200
-games = 10
+req_score = 40
+games = 120
 
 def initial_games(env):
     # intialize training data
     train_data = []
     scores = [] 
     actions = []
+    correct_action = [1, 0]
 
     # iterate through all games
     for _ in range(games):
@@ -37,6 +38,11 @@ def initial_games(env):
             # sample data based on the action just taken
             observation, reward, done, info = env.step(action)
 
+            if done:
+                game_memory[-1][1] = correct_action[game_memory[-1][1]]
+                game_memory.append([prev_observation, correct_action[action]])
+                break
+
             # if the list is not empty append the previous observation with the action that caused it
             if len(prev_observation) > 0:
                 game_memory.append([prev_observation, action])
@@ -45,9 +51,6 @@ def initial_games(env):
 
             # add to the score
             score += reward
-
-            if done:
-                break
 
         # game is done
         env.close()
@@ -75,23 +78,23 @@ def initialize_model(num_actions):
 
     # create feed forward part of neural network
     model.add(Dense(128))
-    model.add(Dropout(0.5))
+    model.add(Dropout(0.3))
     model.add(Activation('relu'))
 
     model.add(Dense(256))
-    model.add(Dropout(0.5))
+    model.add(Dropout(0.3))
     model.add(Activation('relu'))
 
     model.add(Dense(512))
-    model.add(Dropout(0.5))
+    model.add(Dropout(0.3))
     model.add(Activation('relu'))
 
     model.add(Dense(256))
-    model.add(Dropout(0.5))
+    model.add(Dropout(0.3))
     model.add(Activation('relu'))
 
     model.add(Dense(128))
-    model.add(Dropout(0.5))
+    model.add(Dropout(0.3))
     model.add(Activation('relu'))
 
     model.add(Dense(num_actions))
@@ -115,7 +118,7 @@ def train(train_data, model, envname):
     y = np.array(y)
 
     # train and save model
-    model.fit(x, y, epochs=3)
+    model.fit(x, y, epochs=5)
 
     # save model
     model.save(envname + '.h5')
