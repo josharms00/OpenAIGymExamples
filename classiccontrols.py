@@ -8,196 +8,292 @@ import argparse
 
 goal_score = 500
 req_score = 40
-games = 120
+games = 100
 
-def initial_games(env):
-    # intialize training data
-    train_data = []
-    scores = [] 
-    actions = []
-    correct_action = [1, 0]
+class Agent(object):
 
-    # iterate through all games
-    for _ in range(games):
-        score = 0 # score is 0 at beginning of each game
-        game_memory = []
-        prev_observation = []
-        
+    def __init__(self):
+        self.model = self.initialize_model(2)
 
-        # reset the game before trying to get data from it
-        observation = env.reset()
+    def initial_games(self, env):
+        # intialize training data
+        train_data = []
+        scores = [] 
+        actions = []
+        correct_action = [1, 0]
+        games_list = []
 
-        # iterate as many times as it should ideally last
-        while 1:
-            # move in random direction, cartpole can only go two ways
-            action = env.action_space.sample()
+        # iterate through all games
+        for _ in range(games):
+            score = 0 # score is 0 at beginning of each game
+            game_memory = []
+            prev_observation = []
+            
 
-            if action not in actions:
-                actions.append(action)
+            # reset the game before trying to get data from it
+            observation = env.reset()
 
-            # sample data based on the action just taken
-            observation, reward, done, info = env.step(action)
-
-            if done:
-                game_memory[-1][1] = correct_action[game_memory[-1][1]]
-                game_memory.append([prev_observation, correct_action[action]])
-                break
-
-            # if the list is not empty append the previous observation with the action that caused it
-            if len(prev_observation) > 0:
-                game_memory.append([prev_observation, action])
-
-            prev_observation = observation
-
-            # add to the score
-            score += reward
-
-        # game is done
-        env.close()
-
-        # if score is good enough append to data
-        if score >= req_score:
-            scores.append(score)
-
-            # outputs need to be one hot encoded
-            for data in game_memory:
-                train_data.append([data[0], data[1]])
-
-
-    train_data = np.array(train_data)
-
-    np.save('cartpole_training_data.npy', train_data)
-
-    return train_data, actions
-
-def initialize_model(num_actions):
-    # create model
-    model = Sequential()
-
-    model.add(Flatten())
-
-    # create feed forward part of neural network
-    model.add(Dense(128))
-    model.add(Dropout(0.3))
-    model.add(Activation('relu'))
-
-    model.add(Dense(256))
-    model.add(Dropout(0.3))
-    model.add(Activation('relu'))
-
-    model.add(Dense(512))
-    model.add(Dropout(0.3))
-    model.add(Activation('relu'))
-
-    model.add(Dense(256))
-    model.add(Dropout(0.3))
-    model.add(Activation('relu'))
-
-    model.add(Dense(128))
-    model.add(Dropout(0.3))
-    model.add(Activation('relu'))
-
-    model.add(Dense(num_actions))
-    model.add(Activation('softmax'))
-
-    model.compile(loss='sparse_categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
-
-    return model
-
-def train(train_data, model, envname):
-    x = []
-    y = []
-
-    # extract labels and data from train_data
-    for i in train_data:
-        x.append(np.array([i[0]]).reshape(-1, len(train_data[0][0]), 1))
-        y.append(np.array([i[1]]))
-
-    # convert lists to numpy arrays
-    x = np.array(x)
-    y = np.array(y)
-
-    # train and save model
-    model.fit(x, y, epochs=5)
-
-    # save model
-    model.save(envname + '.h5')
-
-def test(model, games, env):
-    prev_observation = []
-    scores = []
-    
-    # play for required amount of games
-    for _ in range(games):
-        score = 0 
-        env.reset()
-        while 1:
-            env.render()
-
-            # if list is empty there are no actions to predict so movement is random
-            if len(prev_observation) == 0:
+            # iterate as many times as it should ideally last
+            while 1:
+                # move in random direction, cartpole can only go two ways
                 action = env.action_space.sample()
-            else:
-                # predict next action based off previous observation
-                action = np.argmax(model.predict(prev_observation.reshape(-1, len(prev_observation), 1))[0])
 
-            # get timestep data based on action
-            obver, reward, done, info = env.step(action)
-            prev_observation = obver
-            score += 1
+                if action not in actions:
+                    actions.append(action)
 
-            if done:
-                break
-
-        scores.append(score)
-
-    # print out the highest and average score for the games
-    print('Highest score: ', max(scores))
-    print('Average score: ', sum(scores)/len(scores))
-
-def investigate_env(env):
-    actions = []
-    d = False
-    for _ in range(50):
-        score = 0 # score is 0 at beginning of each game
-        game_memory = []
-        prev_observation = []
-        
-        # reset the game before trying to get data from it
-        observation = env.reset()
-
-        # iterate as many times as it should ideally last
-        while 1:
-            # move in random direction
-            action = env.action_space.sample()
-
-            if action not in actions:
-                actions.append(action)
-
-            # sample data based on the action just taken
-            observation, reward, done, info = env.step(action)
-
-            if done:
-                break
-
-        # game is done
-        env.close()
-
-    print('Number of actions: ', len(actions))
-
-    for action in actions:
-        print('Movement for action ', action)
-        env.reset()
-        for _ in range(1000):
-            env.render()
-
-            if not d:
                 # sample data based on the action just taken
                 observation, reward, done, info = env.step(action)
 
-            if done:
-                d = True
-    env.close()
+                # if the list is not empty append the previous observation with the action that caused it
+                if len(prev_observation) > 0:
+                    game_memory.append([prev_observation, action, observation, reward, done])
+
+                prev_observation = observation
+
+                # add to the score
+                score += reward
+
+                if done:
+                    break
+
+            # game is done
+            env.close()
+
+            # if score is good enough append to data
+            if score >= req_score:
+                scores.append(score)
+
+                # outputs need to be one hot encoded
+                #for data in game_memory:
+                games_list.append(game_memory)
+        
+        train_data = self.replay(games_list, actions)
+
+        train_data = np.array(train_data)
+
+        #np.save('cartpole_training_data.npy', train_data)
+
+        return train_data, actions
+
+    def replay(self, games, actions):
+        # self.model.predict(games)
+        train_data = []
+    
+        for game in games:
+            Q = np.zeros((len(game), len(actions)))
+            for i in range(len(game)):
+                action = game[i][1]
+                state = game[i][0]
+                reward = game[i][3]
+                next_state = game[i][2]
+                done = game[i][4]
+
+                if done:
+                    Q[i][action] = reward
+                    break
+
+                Q[i][action] = reward + 0.5*Q[i+1][np.argmax(Q[i+1])]
+
+                game[i][1] = np.argmax(Q[i])
+                train_data.append([game[i][0], game[i][1]])
+
+        return train_data
+
+
+
+            
+
+    # def mountain_car(env):
+
+    #     # intialize training data
+    #     train_data = []
+    #     scores = [] 
+    #     actions = []
+    #     correct_action = [2, 2, 1]
+    #     games = []
+
+    #     # iterate through all games
+    #     for _ in range(games):
+    #         score = 0 # score is 0 at beginning of each game
+    #         game_memory = []
+    #         prev_observation = []
+            
+
+    #         # reset the game before trying to get data from it
+    #         observation = env.reset()
+
+    #         # iterate as many times as it should ideally last
+    #         while 1:
+    #             # move in random direction, cartpole can only go two ways
+    #             action = env.action_space.sample()
+
+    #             if action not in actions:
+    #                 actions.append(action)
+
+    #             # sample data based on the action just taken
+    #             observation, reward, done, info = env.step(action)
+
+    #             # if the list is not empty append the previous observation with the action that caused it
+    #             if len(prev_observation) > 0:
+    #                 game_memory.append([prev_observation, action, reward, observation, done])
+
+    #             prev_observation = observation
+
+    #             # add to the score
+    #             score += reward
+
+    #             if done:
+    #                 break
+
+    #         # game is done
+    #         env.close()
+
+    #         # if score is good enough append to data
+    #         if score >= req_score:
+    #             scores.append(score)
+
+    #             # outputs need to be one hot encoded
+    #             for data in game_memory:
+    #                 train_data.append([data[0], data[1]])
+    #                 game 
+
+
+    #     train_data = np.array(train_data)
+
+    #     np.save('mountaincar_training_data.npy', train_data)
+
+    #     return train_data, actions
+
+
+
+    def initialize_model(self, num_actions):
+        # create model
+        model = Sequential()
+
+        model.add(Flatten())
+
+        # create feed forward part of neural network
+        model.add(Dense(128))
+        model.add(Dropout(0.3))
+        model.add(Activation('relu'))
+
+        model.add(Dense(256))
+        model.add(Dropout(0.3))
+        model.add(Activation('relu'))
+
+        model.add(Dense(512))
+        model.add(Dropout(0.3))
+        model.add(Activation('relu'))
+
+        model.add(Dense(256))
+        model.add(Dropout(0.3))
+        model.add(Activation('relu'))
+
+        model.add(Dense(128))
+        model.add(Dropout(0.3))
+        model.add(Activation('relu'))
+
+        model.add(Dense(num_actions))
+        model.add(Activation('softmax'))
+
+        model.compile(loss='sparse_categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+
+        return model
+
+    def train(self, train_data, envname):
+        x = []
+        y = []
+
+        # extract labels and data from train_data
+        for i in train_data:
+            x.append(np.array([i[0]]).reshape(-1, len(train_data[0][0]), 1))
+            y.append(np.array([i[1]]))
+
+        # convert lists to numpy arrays
+        x = np.array(x)
+        y = np.array(y)
+
+        # train and save model
+        self.model.fit(x, y, epochs=3)
+
+        # save model
+        self.model.save(envname + '.h5')
+
+    def test(self, model, games, env):
+        prev_observation = []
+        scores = []
+        
+        # play for required amount of games
+        for _ in range(games):
+            score = 0 
+            env.reset()
+            while 1:
+                env.render()
+
+                # if list is empty there are no actions to predict so movement is random
+                if len(prev_observation) == 0:
+                    action = env.action_space.sample()
+                else:
+                    # predict next action based off previous observation
+                    action = np.argmax(model.predict(prev_observation.reshape(-1, len(prev_observation), 1))[0])
+
+                # get timestep data based on action
+                obver, reward, done, info = env.step(action)
+                prev_observation = obver
+                score += 1
+
+                if done:
+                    break
+
+            scores.append(score)
+
+        # print out the highest and average score for the games
+        print('Highest score: ', max(scores))
+        print('Average score: ', sum(scores)/len(scores))
+
+    def investigate_env(self, env):
+        actions = []
+        d = False
+        for _ in range(50):
+            score = 0 # score is 0 at beginning of each game
+            game_memory = []
+            prev_observation = []
+            
+            # reset the game before trying to get data from it
+            observation = env.reset()
+
+            # iterate as many times as it should ideally last
+            while 1:
+                # move in random direction
+                action = env.action_space.sample()
+
+                if action not in actions:
+                    actions.append(action)
+
+                # sample data based on the action just taken
+                observation, reward, done, info = env.step(action)
+
+                if done:
+                    break
+
+            # game is done
+            env.close()
+
+        print('Number of actions: ', len(actions))
+
+        for action in actions:
+            print('Movement for action ', action)
+            env.reset()
+            for _ in range(1000):
+                env.render()
+
+                if not d:
+                    # sample data based on the action just taken
+                    observation, reward, done, info = env.step(action)
+
+                if done:
+                    d = True
+        env.close()
 
 
 
@@ -225,15 +321,17 @@ def main():
 
     env = gym.make(args.env)
 
+    agent = Agent()
+
     if args.train:
-        data, actions = initial_games(env)
-        model = initialize_model(len(actions))
-        train(data, model, args.env)
+        data, actions = agent.initial_games(env)
+        model = agent.initialize_model(len(actions))
+        agent.train(data, args.env)
 
     if args.test:
         model = tf.keras.models.load_model(args.env + '.h5')
         game = int(args.test)
-        test(model, game, env)
+        agent.test(model, game, env)
 
     if args.inv:
         investigate_env(env)
