@@ -7,13 +7,14 @@ import numpy as np
 import argparse
 
 goal_score = 500
-req_score = 40
+req_score = 50
 games = 100
 
 class Agent(object):
 
-    def __init__(self):
+    def __init__(self, env):
         self.model = self.initialize_model(2)
+        self.env = gym.make(env)
 
     def initial_games(self, env):
         # intialize training data
@@ -28,46 +29,52 @@ class Agent(object):
             score = 0 # score is 0 at beginning of each game
             game_memory = []
             prev_observation = []
+            Q = np.zeros((100, 2))
             
 
             # reset the game before trying to get data from it
-            observation = env.reset()
+            observation = self.env.reset()
 
             # iterate as many times as it should ideally last
             while 1:
                 # move in random direction, cartpole can only go two ways
-                action = env.action_space.sample()
+                action = self.env.action_space.sample()
 
                 if action not in actions:
                     actions.append(action)
 
                 # sample data based on the action just taken
-                observation, reward, done, info = env.step(action)
-
-                # if the list is not empty append the previous observation with the action that caused it
-                if len(prev_observation) > 0:
-                    game_memory.append([prev_observation, action, observation, reward, done])
-
-                prev_observation = observation
+                observation, reward, done, info = self.env.step(action)
 
                 # add to the score
                 score += reward
 
                 if done:
+                    state = self.state_to_int(prev_observation)
+                    Q[state][action] = reward
                     break
 
+                # if the list is not empty append the previous observation with the action that caused it
+                if len(prev_observation) > 0:
+                    game_memory.append([prev_observation, action, observation, reward, done])
+                    state = self.state_to_int(prev_observation)
+                    next_state = self.state_to_int(observation)
+                    Q[state][action] = reward + 1.0*Q[next_state][np.argmax(Q[next_state])]
+
+                prev_observation = observation
+
             # game is done
-            env.close()
+            self.env.close()
 
             # if score is good enough append to data
             if score >= req_score:
                 scores.append(score)
 
                 # outputs need to be one hot encoded
-                #for data in game_memory:
-                games_list.append(game_memory)
+                for data in game_memory:
+                    train_data.append([data[0], data[1]])
         
-        train_data = self.replay(games_list, actions)
+       # train_data = self.replay(games_list, actions)
 
         train_data = np.array(train_data)
 
@@ -76,95 +83,39 @@ class Agent(object):
         return train_data, actions
 
     def replay(self, games, actions):
-        # self.model.predict(games)
         train_data = []
+
+        Q = np.zeros((100, len(actions)))
     
         for game in games:
-            Q = np.zeros((len(game), len(actions)))
             for i in range(len(game)):
                 action = game[i][1]
-                state = game[i][0]
+                state = self.state_to_int(game[i][0])
                 reward = game[i][3]
-                next_state = game[i][2]
+                next_state = self.state_to_int(game[i][2])
                 done = game[i][4]
 
                 if done:
                     Q[i][action] = reward
                     break
 
-                Q[i][action] = reward + 0.5*Q[i+1][np.argmax(Q[i+1])]
+                Q[state][action] = reward + 0.9*Q[next_state][np.argmax(Q[next_state])]
 
-                game[i][1] = np.argmax(Q[i])
+                game[i][1] = np.argmax(Q[state])
                 train_data.append([game[i][0], game[i][1]])
 
         return train_data
 
+    def state_to_int(self, state):
+        int_states = []
+        env_low = self.env.observation_space.low
+        env_high = self.env.observation_space.high
+        e = (np.round(env_high, 5) - np.round(env_low, 5)) / 100
 
+        for i in range(len(state)):
+            int_states.append(int((state[i] - env_low[i]) / e[i]))
 
-            
-
-    # def mountain_car(env):
-
-    #     # intialize training data
-    #     train_data = []
-    #     scores = [] 
-    #     actions = []
-    #     correct_action = [2, 2, 1]
-    #     games = []
-
-    #     # iterate through all games
-    #     for _ in range(games):
-    #         score = 0 # score is 0 at beginning of each game
-    #         game_memory = []
-    #         prev_observation = []
-            
-
-    #         # reset the game before trying to get data from it
-    #         observation = env.reset()
-
-    #         # iterate as many times as it should ideally last
-    #         while 1:
-    #             # move in random direction, cartpole can only go two ways
-    #             action = env.action_space.sample()
-
-    #             if action not in actions:
-    #                 actions.append(action)
-
-    #             # sample data based on the action just taken
-    #             observation, reward, done, info = env.step(action)
-
-    #             # if the list is not empty append the previous observation with the action that caused it
-    #             if len(prev_observation) > 0:
-    #                 game_memory.append([prev_observation, action, reward, observation, done])
-
-    #             prev_observation = observation
-
-    #             # add to the score
-    #             score += reward
-
-    #             if done:
-    #                 break
-
-    #         # game is done
-    #         env.close()
-
-    #         # if score is good enough append to data
-    #         if score >= req_score:
-    #             scores.append(score)
-
-    #             # outputs need to be one hot encoded
-    #             for data in game_memory:
-    #                 train_data.append([data[0], data[1]])
-    #                 game 
-
-
-    #     train_data = np.array(train_data)
-
-    #     np.save('mountaincar_training_data.npy', train_data)
-
-    #     return train_data, actions
-
-
+        return int(np.sum(int_states) / len(int_states))
 
     def initialize_model(self, num_actions):
         # create model
@@ -214,7 +165,7 @@ class Agent(object):
         y = np.array(y)
 
         # train and save model
-        self.model.fit(x, y, epochs=3)
+        self.model.fit(x, y, epochs=2)
 
         # save model
         self.model.save(envname + '.h5')
@@ -295,9 +246,6 @@ class Agent(object):
                     d = True
         env.close()
 
-
-
-
 def main():
     parser = argparse.ArgumentParser()
 
@@ -321,7 +269,7 @@ def main():
 
     env = gym.make(args.env)
 
-    agent = Agent()
+    agent = Agent(args.env)
 
     if args.train:
         data, actions = agent.initial_games(env)
