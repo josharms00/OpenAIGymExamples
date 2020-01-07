@@ -9,14 +9,19 @@ import argparse
 goal_score = 500
 req_score = 50
 games = 100
+BATCH_SIZE = 20
+epsilon = 0.8
+gamma = 0.95
 
 class Agent(object):
 
     def __init__(self, env):
-        self.model = self.initialize_model(2)
         self.env = gym.make(env)
+        self.observation_space = self.env.observation_space.shape[0]
+        self.action_space = self.env.action_space.n
+        self.model = self.initialize_model()
 
-    def initial_games(self, env):
+    def initial_games(self):
         # intialize training data
         train_data = []
         scores = [] 
@@ -29,16 +34,19 @@ class Agent(object):
             score = 0 # score is 0 at beginning of each game
             game_memory = []
             prev_observation = []
-            Q = np.zeros((100, 2))
             
-
             # reset the game before trying to get data from it
             observation = self.env.reset()
 
             # iterate as many times as it should ideally last
             while 1:
-                # move in random direction, cartpole can only go two ways
-                action = self.env.action_space.sample()
+
+                # take random action with epsilon chance
+                if np.random.uniform(0, 1) <= epsilon or len(prev_observation) == 0:
+                    action = self.env.action_space.sample()
+                else:
+                    action = np.argmax(self.model.predict(np.reshape(prev_observation, [1, self.observation_space])))
+
 
                 if action not in actions:
                     actions.append(action)
@@ -50,16 +58,11 @@ class Agent(object):
                 score += reward
 
                 if done:
-                    state = self.state_to_int(prev_observation)
-                    Q[state][action] = reward
                     break
 
                 # if the list is not empty append the previous observation with the action that caused it
                 if len(prev_observation) > 0:
                     game_memory.append([prev_observation, action, observation, reward, done])
-                    state = self.state_to_int(prev_observation)
-                    next_state = self.state_to_int(observation)
-                    Q[state][action] = reward + 1.0*Q[next_state][np.argmax(Q[next_state])]
 
                 prev_observation = observation
 
@@ -73,8 +76,13 @@ class Agent(object):
                 # outputs need to be one hot encoded
                 for data in game_memory:
                     train_data.append([data[0], data[1]])
+
+                games_list.append(game_memory)
+        
         
        # train_data = self.replay(games_list, actions)
+
+        self.replay(games_list, actions)
 
         train_data = np.array(train_data)
 
@@ -84,47 +92,38 @@ class Agent(object):
 
     def replay(self, games, actions):
         train_data = []
-
-        Q = np.zeros((100, len(actions)))
     
         for game in games:
             for i in range(len(game)):
                 action = game[i][1]
-                state = self.state_to_int(game[i][0])
+                state = game[i][0]
                 reward = game[i][3]
-                next_state = self.state_to_int(game[i][2])
+                next_state = game[i][2]
                 done = game[i][4]
 
+                Q = self.model.predict(np.reshape(state, [1, self.observation_space]))
+                Q[0][action] = reward + gamma*np.max(self.model.predict(np.reshape(next_state, [1, self.observation_space ]))[0])
+
                 if done:
-                    Q[i][action] = reward
+                    Q[0][action] = -reward
                     break
 
-                Q[state][action] = reward + 0.9*Q[next_state][np.argmax(Q[next_state])]
+                state = np.array(state)
 
-                game[i][1] = np.argmax(Q[state])
-                train_data.append([game[i][0], game[i][1]])
+    
+                game[i][1] = np.argmax(Q[[0]])
+                self.model.fit(np.reshape(state, [1, self.observation_space]), Q)
+        #         train_data.append([game[i][0], game[i][1]])
 
-        return train_data
+        # print('nice')
+        # return train_data
 
-    def state_to_int(self, state):
-        int_states = []
-        env_low = self.env.observation_space.low
-        env_high = self.env.observation_space.high
-        e = (np.round(env_high, 5) - np.round(env_low, 5)) / 100
-
-        for i in range(len(state)):
-            int_states.append(int((state[i] - env_low[i]) / e[i]))
-
-        return int(np.sum(int_states) / len(int_states))
-
-    def initialize_model(self, num_actions):
+    def initialize_model(self):
         # create model
         model = Sequential()
 
-        model.add(Flatten())
-
         # create feed forward part of neural network
-        model.add(Dense(128))
+        model.add(Dense(24, input_shape=(self.observation_space,)))
         model.add(Dropout(0.3))
         model.add(Activation('relu'))
 
@@ -144,10 +143,10 @@ class Agent(object):
         model.add(Dropout(0.3))
         model.add(Activation('relu'))
 
-        model.add(Dense(num_actions))
-        model.add(Activation('softmax'))
+        model.add(Dense(self.action_space))
+        model.add(Activation('linear'))
 
-        model.compile(loss='sparse_categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+        model.compile(loss='mse', optimizer='adam', metrics=['accuracy'])
 
         return model
 
@@ -157,7 +156,8 @@ class Agent(object):
 
         # extract labels and data from train_data
         for i in train_data:
-            x.append(np.array([i[0]]).reshape(-1, len(train_data[0][0]), 1))
+            print(np.array([i[0]]).reshape(1, self.observation_space))
+            x.append(np.array([i[0]]).reshape(1, self.observation_space))
             y.append(np.array([i[1]]))
 
         # convert lists to numpy arrays
@@ -165,31 +165,34 @@ class Agent(object):
         y = np.array(y)
 
         # train and save model
-        self.model.fit(x, y, epochs=2)
+        if len(x) == 0:
+            print('No training data.')
+        else:
+            self.model.fit(x, y, epochs=2)
 
-        # save model
-        self.model.save(envname + '.h5')
+            # save model
+            self.model.save(envname + '.h5')
 
-    def test(self, model, games, env):
+    def test(self, model, games):
         prev_observation = []
         scores = []
         
         # play for required amount of games
         for _ in range(games):
             score = 0 
-            env.reset()
+            self.env.reset()
             while 1:
-                env.render()
+                self.env.render()
 
                 # if list is empty there are no actions to predict so movement is random
                 if len(prev_observation) == 0:
-                    action = env.action_space.sample()
+                    action = self.env.action_space.sample()
                 else:
                     # predict next action based off previous observation
                     action = np.argmax(model.predict(prev_observation.reshape(-1, len(prev_observation), 1))[0])
 
                 # get timestep data based on action
-                obver, reward, done, info = env.step(action)
+                obver, reward, done, info = self.env.step(action)
                 prev_observation = obver
                 score += 1
 
@@ -201,50 +204,6 @@ class Agent(object):
         # print out the highest and average score for the games
         print('Highest score: ', max(scores))
         print('Average score: ', sum(scores)/len(scores))
-
-    def investigate_env(self, env):
-        actions = []
-        d = False
-        for _ in range(50):
-            score = 0 # score is 0 at beginning of each game
-            game_memory = []
-            prev_observation = []
-            
-            # reset the game before trying to get data from it
-            observation = env.reset()
-
-            # iterate as many times as it should ideally last
-            while 1:
-                # move in random direction
-                action = env.action_space.sample()
-
-                if action not in actions:
-                    actions.append(action)
-
-                # sample data based on the action just taken
-                observation, reward, done, info = env.step(action)
-
-                if done:
-                    break
-
-            # game is done
-            env.close()
-
-        print('Number of actions: ', len(actions))
-
-        for action in actions:
-            print('Movement for action ', action)
-            env.reset()
-            for _ in range(1000):
-                env.render()
-
-                if not d:
-                    # sample data based on the action just taken
-                    observation, reward, done, info = env.step(action)
-
-                if done:
-                    d = True
-        env.close()
 
 def main():
     parser = argparse.ArgumentParser()
@@ -267,22 +226,17 @@ def main():
 
     args = parser.parse_args()
 
-    env = gym.make(args.env)
-
     agent = Agent(args.env)
 
     if args.train:
-        data, actions = agent.initial_games(env)
-        model = agent.initialize_model(len(actions))
-        agent.train(data, args.env)
+        data, actions = agent.initial_games()
+        #agent.train(data, args.env)
 
     if args.test:
         model = tf.keras.models.load_model(args.env + '.h5')
         game = int(args.test)
-        agent.test(model, game, env)
+        agent.test(model, game)
 
-    if args.inv:
-        investigate_env(env)
 
 
 if __name__ == '__main__':
