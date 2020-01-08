@@ -7,10 +7,10 @@ import numpy as np
 import argparse
 
 goal_score = 500
-req_score = 50
-games = 100
+req_score = 40
+games = 135
 BATCH_SIZE = 20
-epsilon = 0.8
+epsilon = 0.75
 gamma = 0.95
 
 class Agent(object):
@@ -26,7 +26,6 @@ class Agent(object):
         train_data = []
         scores = [] 
         actions = []
-        correct_action = [1, 0]
         games_list = []
 
         # iterate through all games
@@ -78,17 +77,9 @@ class Agent(object):
                     train_data.append([data[0], data[1]])
 
                 games_list.append(game_memory)
-        
-        
-       # train_data = self.replay(games_list, actions)
 
         self.replay(games_list, actions)
 
-        train_data = np.array(train_data)
-
-        #np.save('cartpole_training_data.npy', train_data)
-
-        return train_data, actions
 
     def replay(self, games, actions):
         train_data = []
@@ -113,10 +104,6 @@ class Agent(object):
     
                 game[i][1] = np.argmax(Q[[0]])
                 self.model.fit(np.reshape(state, [1, self.observation_space]), Q)
-        #         train_data.append([game[i][0], game[i][1]])
-
-        # print('nice')
-        # return train_data
 
     def initialize_model(self):
         # create model
@@ -229,7 +216,7 @@ def main():
     agent = Agent(args.env)
 
     if args.train:
-        data, actions = agent.initial_games()
+        agent.initial_games()
         #agent.train(data, args.env)
 
     if args.test:
